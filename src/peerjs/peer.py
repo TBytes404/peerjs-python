@@ -1,4 +1,5 @@
 """Python port of PeerJS client with built in signaling to PeerJS server."""
+
 # import json
 # import websockets
 # from websockets import WebSocket, ConnectionClosed
@@ -8,7 +9,7 @@ from dataclasses import dataclass, field
 from typing import Any, List
 import traceback
 
-from pyee import AsyncIOEventEmitter
+from pyee.asyncio import AsyncIOEventEmitter
 
 from .api import API
 from .baseconnection import BaseConnection
@@ -57,9 +58,7 @@ class PeerOptions:
 class Peer(AsyncIOEventEmitter):
     """A peer that can initiate direct connections with other peers."""
 
-    def __init__(self,
-                 id: str = None,
-                 peer_options: PeerOptions = None):
+    def __init__(self, id: str = None, peer_options: PeerOptions = None):
         """Create a peer instance."""
         super().__init__()
 
@@ -103,8 +102,7 @@ class Peer(AsyncIOEventEmitter):
         # Sanity checks
         # Ensure alphanumeric id
         if self._id and not util.validateId(self._id):
-            self._delayedAbort(PeerErrorType.InvalidID,
-                               f'ID "{self._id}" is invalid')
+            self._delayedAbort(PeerErrorType.InvalidID, f'ID "{self._id}" is invalid')
             return
 
         if self._id is None:
@@ -115,25 +113,33 @@ class Peer(AsyncIOEventEmitter):
                 await self._abort(PeerErrorType.ServerError, e)
                 return
         await self.socket.start(self._id, self._options.token)
-        log.info('Peer started with UUID: %s', self._id)
+        log.info("Peer started with UUID: %s", self._id)
 
     @property
-    def id(self, ) -> None:
+    def id(
+        self,
+    ) -> None:
         """Return the UUID of this peer."""
         return self._id
 
     @property
-    def options(self, ):
+    def options(
+        self,
+    ):
         """Return peer configuration options."""
         return self._options
 
     @property
-    def open(self, ):
+    def open(
+        self,
+    ):
         """Return true if this peer connection is open."""
         return self._open
 
     @property
-    def socket(self, ):
+    def socket(
+        self,
+    ):
         """Return peer's websocket wrapper for the signaling connection."""
         return self._socket
 
@@ -141,7 +147,7 @@ class Peer(AsyncIOEventEmitter):
     def http_api(self):
         """Return peer's active http API resource."""
         return self._api
-    
+
     # #
     #  * @deprecated
     #  * Return type will change from Object to Map<string,[]>
@@ -173,7 +179,8 @@ class Peer(AsyncIOEventEmitter):
             self._options.port,
             self._options.path,
             self._options.key,
-            self._options.pingInterval)
+            self._options.pingInterval,
+        )
 
         @socket.on(SocketEventType.Message)
         async def on_message(data: ServerMessage):
@@ -193,8 +200,9 @@ class Peer(AsyncIOEventEmitter):
         @socket.on(SocketEventType.Close)
         async def on_close():
             if self.disconnected:
-                await self._abort(PeerErrorType.SocketClosed,
-                                  "Underlying socket is already closed.")
+                await self._abort(
+                    PeerErrorType.SocketClosed, "Underlying socket is already closed."
+                )
 
         return socket
 
@@ -204,10 +212,15 @@ class Peer(AsyncIOEventEmitter):
         peerId = message.src
         payload = message.payload
 
-        log.debug('\n Handling server message \n type %s, '
-                  '\n source peer/client id %s, \n message payload %s, '
-                  '\n full message %r',
-                  type, peerId, payload, message)
+        log.debug(
+            "\n Handling server message \n type %s, "
+            "\n source peer/client id %s, \n message payload %s, "
+            "\n full message %r",
+            type,
+            peerId,
+            payload,
+            message,
+        )
 
         server_messenger = AsyncIOEventEmitter()
 
@@ -216,7 +229,7 @@ class Peer(AsyncIOEventEmitter):
         def _on_server_open():
             self._lastServerId = self.id
             self._open = True
-            log.info('Signaling server connection open.')
+            log.info("Signaling server connection open.")
             self.emit(PeerEventType.Open, self.id)
 
         # Server error.
@@ -227,27 +240,28 @@ class Peer(AsyncIOEventEmitter):
         # The selected ID is taken.
         @server_messenger.once(ServerMessageType.IdTaken)
         async def _on_server_idtaken():
-            await self._abort(PeerErrorType.UnavailableID,
-                              f'ID "${self.id}" is taken')
+            await self._abort(PeerErrorType.UnavailableID, f'ID "${self.id}" is taken')
 
         # The given API key cannot be found.
         @server_messenger.once(ServerMessageType.InvalidKey)
         async def _on_server_invalidkey():
-            await self._abort(PeerErrorType.InvalidKey,
-                              f'API KEY "${self._options.key}" is invalid')
+            await self._abort(
+                PeerErrorType.InvalidKey, f'API KEY "${self._options.key}" is invalid'
+            )
 
         # Another peer has closed its connection to this peer.
         @server_messenger.once(ServerMessageType.Leave)
         async def _on_server_leave():
-            log.debug(f'Received leave message from ${peerId}')
+            log.debug(f"Received leave message from ${peerId}")
             await self._cleanupPeer(peerId)
             self._connections.delete(peerId)
 
         # The offer sent to a peer has expired without response.
         @server_messenger.once(ServerMessageType.Expire)
         def _on_server_expire():
-            self.emitError(PeerErrorType.PeerUnavailable,
-                           f'Could not connect to peer ${peerId}')
+            self.emitError(
+                PeerErrorType.PeerUnavailable, f"Could not connect to peer ${peerId}"
+            )
 
         # Server relaying offer for a direct connection from a remote peer
         @server_messenger.once(ServerMessageType.Offer)
@@ -262,10 +276,11 @@ class Peer(AsyncIOEventEmitter):
         is_handled = server_messenger.emit(type)
         if not is_handled:
             if not payload:
-                log.warn(f'You received a malformed message '
-                         f'from ${peerId} of type ${type}')
+                log.warn(
+                    f"You received a malformed message from ${peerId} of type ${type}"
+                )
                 return
-            connectionId = payload['connectionId']
+            connectionId = payload["connectionId"]
             connection = self.getConnection(peerId, connectionId)
             if connection and connection.peerConnection:
                 # Pass it on.
@@ -280,18 +295,18 @@ class Peer(AsyncIOEventEmitter):
         """Handle remote peer offer for a direct connection."""
         # we should consider switching this to CALL/CONNECT,
         # but this is the least breaking option.
-        log.debug("\n Remote peer id %s offering connection. \n Payload %s",
-                  peerId, payload)
-        connectionId = payload['connectionId']
+        log.debug(
+            "\n Remote peer id %s offering connection. \n Payload %s", peerId, payload
+        )
+        connectionId = payload["connectionId"]
         connection = self.getConnection(peerId, connectionId)
 
-        if (connection):
+        if connection:
             connection.close()
-            log.warning(f'Offer received for '
-                        f'existing Connection ID:${connectionId}')
+            log.warning(f"Offer received for existing Connection ID:${connectionId}")
 
         # Create a new connection.
-        if payload['type'] == ConnectionType.Media.value:
+        if payload["type"] == ConnectionType.Media.value:
             pass
         # MediaConnection not supported yet in the Python port of PeerJS yet.
         #       Contributions welcome!
@@ -302,23 +317,22 @@ class Peer(AsyncIOEventEmitter):
         #   });
         #   this._addConnection(peerId, connection);
         #   this.emit(PeerEventType.Call, connection);
-        elif payload['type'] == ConnectionType.Data.value:
+        elif payload["type"] == ConnectionType.Data.value:
             connection = DataConnection(
                 peerId=peerId,
                 provider=self,
                 connectionId=connectionId,
-                label=payload['label'],
-                serialization=payload['serialization'],
-                reliable=payload['reliable'],
+                label=payload["label"],
+                serialization=payload["serialization"],
+                reliable=payload["reliable"],
                 _payload=payload,
-                metadata=payload.get('metadata', None)
-                )
+                metadata=payload.get("metadata", None),
+            )
             await connection.start()
             self._addConnection(peerId, connection)
             self.emit(PeerEventType.Connection, connection)
         else:
-            log.warning('Received malformed connection type: %s',
-                        payload["type"])
+            log.warning("Received malformed connection type: %s", payload["type"])
             return
 
         # Retrieved pending messages from the server for remote peers.
@@ -326,8 +340,7 @@ class Peer(AsyncIOEventEmitter):
         for message in messages:
             await connection.handleMessage(message)
 
-    def _storeMessage(self,
-                      connectionId: str, message: ServerMessage) -> None:
+    def _storeMessage(self, connectionId: str, message: ServerMessage) -> None:
         """Store messages without a set up connection, to be claimed later."""
         if connectionId not in self._lostMessages:
             self._lostMessages[connectionId] = []
@@ -339,9 +352,9 @@ class Peer(AsyncIOEventEmitter):
         messages = self._lostMessages.pop(connectionId, [])
         return messages
 
-    async def connect(self,
-                      peer: str,
-                      options: PeerConnectOption = {}) -> DataConnection:
+    async def connect(
+        self, peer: str, options: PeerConnectOption = {}
+    ) -> DataConnection:
         """Return a DataConnection to the specified remote peer.
 
         See documentation for a complete list of options.
@@ -357,7 +370,7 @@ class Peer(AsyncIOEventEmitter):
             )
             self.emitError(
                 PeerErrorType.Disconnected,
-                "Cannot connect to new Peer after disconnecting from server."
+                "Cannot connect to new Peer after disconnecting from server.",
             )
             return
 
@@ -403,11 +416,12 @@ class Peer(AsyncIOEventEmitter):
     # return mediaConnection;
     # }
 
-    def _addConnection(self,
-                       peerId: str, connection: BaseConnection) -> None:
+    def _addConnection(self, peerId: str, connection: BaseConnection) -> None:
         """Add a data/media connection to this peer."""
-        log.debug(f"add connection ${connection.type}:"
-                  f"${connection.connectionId} to peerId:${peerId}")
+        log.debug(
+            f"add connection ${connection.type}:"
+            f"${connection.connectionId} to peerId:${peerId}"
+        )
         if peerId not in self._connections:
             self._connections[peerId] = []
         self._connections[peerId].append(connection)
@@ -418,16 +432,17 @@ class Peer(AsyncIOEventEmitter):
             try:
                 connections.remove(connection)
             except ValueError as err:
-                log.warning('Error removing connection peer id %s. '
-                            'Connection not found in managed connections list.'
-                            '\n%r',
-                            connection.peer, err)
+                log.warning(
+                    "Error removing connection peer id %s. "
+                    "Connection not found in managed connections list."
+                    "\n%r",
+                    connection.peer,
+                    err,
+                )
         # remove from lost messages
         self._lostMessages.pop(connection.connectionId, None)
 
-    def getConnection(self,
-                      peerId: str,
-                      connectionId: str) -> BaseConnection:
+    def getConnection(self, peerId: str, connectionId: str) -> BaseConnection:
         """Retrieve a data/media connection for this peer."""
         connections = self._connections.get(peerId, None)
         if not connections:
@@ -447,11 +462,7 @@ class Peer(AsyncIOEventEmitter):
         in which case
         it retains its disconnected state and its existing connections.
         """
-        log.error('Aborting! \n'
-                  'PeerErrorType: %s \n'
-                  'Error message: %s',
-                  type,
-                  message)
+        log.error("Aborting! \nPeerErrorType: %s \nError message: %s", type, message)
         traceback.print_stack()
         self.emitError(type, message)
         if not self._lastServerId:
@@ -461,12 +472,12 @@ class Peer(AsyncIOEventEmitter):
 
     def emitError(self, type: PeerErrorType, err: str) -> None:
         """Emit a typed error message."""
-        log.warning('Connection error: %s', err)
+        log.warning("Connection error: %s", err)
         if isinstance(err, str):
             err = RuntimeError(err)
         else:
             assert isinstance(err, Exception)
-        log.warning('Connection error: \n%s', err)
+        log.warning("Connection error: \n%s", err)
         err.type = type
         self.emit(PeerEventType.Error, err)
 
@@ -480,7 +491,7 @@ class Peer(AsyncIOEventEmitter):
         """
         if self.destroyed:
             return
-        log.debug(f'Destroy peer with ID:${self.id}')
+        log.debug(f"Destroy peer with ID:${self.id}")
         await self.disconnect()
         await self._cleanup()
         self._destroyed = True
@@ -516,10 +527,10 @@ class Peer(AsyncIOEventEmitter):
         if self.disconnected:
             return
         currentId = self.id
-        log.debug(f'Disconnect peer with ID:${currentId}')
+        log.debug(f"Disconnect peer with ID:${currentId}")
         self._disconnected = True
         self._open = False
-        if (self.socket is not None):
+        if self.socket is not None:
             await self.socket.close()
         self._lastServerId = currentId
         self._id = None
@@ -528,19 +539,20 @@ class Peer(AsyncIOEventEmitter):
     async def reconnect(self) -> None:
         """Attempt to reconnect with the same ID."""
         if self.disconnected and not self.destroyed:
-            log.debug("Attempting reconnection "
-                      f"to server with ID {self._lastServerId}")
+            log.debug(f"Attempting reconnection to server with ID {self._lastServerId}")
             self._disconnected = False
             self._id = self._lastServerId
             await self.start()
         elif self.destroyed:
-            raise RuntimeError("This peer cannot reconnect to the server. "
-                               "It has already been destroyed.")
+            raise RuntimeError(
+                "This peer cannot reconnect to the server. "
+                "It has already been destroyed."
+            )
         elif not self.disconnected and not self.open:
             # Do nothing. We're still connecting for the first time.
-            log.info("In a hurry? "
-                     "We're still trying to make the initial connection!")
+            log.info("In a hurry? We're still trying to make the initial connection!")
         else:
             raise RuntimeError(
                 f"Peer ${self.id} cannot reconnect "
-                "because it is not disconnected from the server!")
+                "because it is not disconnected from the server!"
+            )

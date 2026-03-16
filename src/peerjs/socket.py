@@ -1,10 +1,11 @@
 """Convenience class to manage peer websocket connection."""
+
 import asyncio
 import json
 import logging
 
 import websockets
-from pyee import AsyncIOEventEmitter
+from pyee.asyncio import AsyncIOEventEmitter
 from websockets.exceptions import ConnectionClosedError
 
 from .enums import SocketEventType
@@ -26,7 +27,7 @@ class Socket(AsyncIOEventEmitter):
         port: int = None,
         path: str = None,
         key: str = None,
-        pingInterval: int = 5000
+        pingInterval: int = 5000,
     ) -> None:
         """Create new wrapper around websocket."""
         super().__init__()
@@ -45,9 +46,7 @@ class Socket(AsyncIOEventEmitter):
         websocket = await websockets.connect(wss_url, ping_interval=5)
         self._sendQueuedMessages()
         log.debug("WebSockets open")
-        await websocket.send(
-            json.dumps({"ping": "once"})
-        )
+        await websocket.send(json.dumps({"ping": "once"}))
         self._disconnected = False
         return websocket
 
@@ -61,11 +60,10 @@ class Socket(AsyncIOEventEmitter):
                     log.debug("Server message received: %s", data)
                     self.emit(SocketEventType.Message, data)
                 except Exception as e:
-                    log.exception("Invalid server message: %s, error %s",
-                                  message, e)
-                self.emit('message', message)
+                    log.exception("Invalid server message: %s, error %s", message, e)
+                self.emit("message", message)
         except asyncio.CancelledError:
-            log.debug('Websocket receive loop cancelled.')
+            log.debug("Websocket receive loop cancelled.")
             return
         except ConnectionClosedError as err:
             log.warning("Websocket connection closed with error. %s", err)
@@ -83,14 +81,13 @@ class Socket(AsyncIOEventEmitter):
         """Start socket connection."""
         self._id = id
         _ws_url = f"{self._baseUrl}&id={id}&token={token}"
-        if (self._websocket or not self._disconnected):
+        if self._websocket or not self._disconnected:
             # socket already connected
             return
         self._websocket = await self._connect(wss_url=_ws_url)
         # ask asyncio to schedule a receiver soon
         # it will end when the socket closes
-        self._receiver = asyncio.create_task(
-            self._receive())
+        self._receiver = asyncio.create_task(self._receive())
 
     # Is the websocket currently open?
     def _wsOpen(self) -> bool:
@@ -112,7 +109,7 @@ class Socket(AsyncIOEventEmitter):
         if self._disconnected:
             return
 
-        log.debug('Socket sending data: \n%r', data)
+        log.debug("Socket sending data: \n%r", data)
 
         # If we didn't get an ID yet,
         # we can't yet send anything so we should queue
@@ -124,11 +121,10 @@ class Socket(AsyncIOEventEmitter):
         #     self.emit(SocketEventType.Error, "Invalid message")
         #     return
         if not self._wsOpen():
-            log.warning("Signaling websocket closed. Cannot send message %r.",
-                        data)
+            log.warning("Signaling websocket closed. Cannot send message %r.", data)
             return
         message = json.dumps(data)
-        log.debug('Message sent to signaling server: \n %r', message)
+        log.debug("Message sent to signaling server: \n %r", message)
         await self._websocket.send(message)
 
     async def close(self) -> None:
